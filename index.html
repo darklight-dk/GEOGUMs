@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Voxel Shooter 3D - Auto Scale & Damage Fix</title>
+  <title>Voxel Shooter 3D - Reference Error Fixed</title>
   
   <!-- Fuentes Gamer -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -394,7 +394,7 @@
         const barrel = new THREE.Mesh(SHARED_BOX_GEO, barrelMat); barrel.scale.set(0.1, 0.1, 0.65); barrel.position.set(0, 0.04, -0.55);
         const mag = new THREE.Mesh(SHARED_BOX_GEO, barrelMat); mag.scale.set(0.12, 0.35, 0.22); mag.position.set(0, -0.22, -0.1); mag.rotation.x = -0.2;
         const stock = new THREE.Mesh(SHARED_BOX_GEO, darkMat); stock.scale.set(0.16, 0.22, 0.4); stock.position.set(0, -0.05, 0.45);
-        // MIRA DISCRETA (NO OBSTRUYE)
+        // MIRA DISCRETA Y BAJA
         const sight = new THREE.Mesh(SHARED_BOX_GEO, cyanMat); sight.scale.set(0.02, 0.03, 0.02); sight.position.set(0, 0.14, -0.6);
         gunGroup.add(body, barrel, mag, stock, sight);
       } 
@@ -544,11 +544,13 @@
       };
     })();
 
-    // VECTORES EXCLUSIVOS PARA JUGADOR Y ENEMIGOS (EVITA SOBREESCRITURA DE MEMORIA)
+    // VECTORES GLOBALES TOTALMENTE DECLARADOS (EVITA ReferenceError)
     const PLAYER_GUN_POS = new THREE.Vector3();
     const PLAYER_HIT_POS = new THREE.Vector3();
     const ENEMY_GUN_POS = new THREE.Vector3();
     const ENEMY_HIT_POS = new THREE.Vector3();
+    const TEMP_VEC1 = new THREE.Vector3();
+    const TEMP_VEC2 = new THREE.Vector3();
     const TEMP_DIR = new THREE.Vector3();
     const TEMP_RAY = new THREE.Raycaster();
 
@@ -1029,7 +1031,6 @@
           const baseModel = gltf.scene;
           const animations = gltf.animations;
 
-          // AUTO-ESCALADO DINÁMICO A TAMAÑO HUMANO (1.8m DE ALTO)
           const box = new THREE.Box3().setFromObject(baseModel);
           const size = box.getSize(new THREE.Vector3());
           const targetHeight = 1.8;
@@ -1105,7 +1106,6 @@
       bulletTracers.push({ mesh: line, spawnTime: performance.now(), duration: 80 });
     }
 
-    // DAÑO LIMPIO AL JUGADOR (SIN SACUDIDAS DE CÁMARA O ARMA)
     function damagePlayer(amount) {
       if (player.shield > 0) {
         if (player.shield >= amount) {
@@ -1237,7 +1237,6 @@
       ctx.stroke();
     }
 
-    // IA ENEMIGA CON VECTORES PROPIOS AISLADOS (NO CONTAMINA EL MOVIMIENTO DEL JUGADOR)
     function updateEnemiesAI(delta, now) {
       targets.forEach((mob) => {
         if (!mob.visible || !mob.userData || mob.userData.health <= 0) return;
@@ -1363,7 +1362,6 @@
       playShootSound(curWep.soundPitch);
       updateHUD();
 
-      // RETROCESO DAMPENADO SUAVE EN EL ARMA DEL JUGADOR
       currentSpread += curWep.spreadInc;
       weaponMesh.position.z += curWep.kickZ;
       weaponMesh.rotation.x += curWep.kickRx;
@@ -1535,7 +1533,6 @@
 
         updateChunks();
 
-        // ESTABILIZACIÓN SUAVE DE VUELTA A LA POSICIÓN BASE DEL ARMA
         if (weaponMesh) {
           weaponMesh.position.lerp(targetWeaponPos, delta * 12);
           weaponMesh.rotation.x = THREE.MathUtils.lerp(weaponMesh.rotation.x, defaultWeaponRot.x, delta * 12);
