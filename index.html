@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Voxel Shooter 3D - Weapon & Sight Fixed</title>
+  <title>Voxel Shooter 3D - Auto Scale & Damage Fix</title>
   
   <!-- Fuentes Gamer -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -369,7 +369,7 @@
   <script>
     document.addEventListener('contextmenu', e => e.preventDefault());
 
-    // --- POSICIONES Y ROTACIONES BASE ---
+    // --- POSICIONES Y ROTACIONES BASE DE ARMAS ---
     const defaultWeaponPos = new THREE.Vector3(0.3, -0.3, -0.6);
     const defaultWeaponRot = new THREE.Euler(0, 0, 0);
 
@@ -394,7 +394,7 @@
         const barrel = new THREE.Mesh(SHARED_BOX_GEO, barrelMat); barrel.scale.set(0.1, 0.1, 0.65); barrel.position.set(0, 0.04, -0.55);
         const mag = new THREE.Mesh(SHARED_BOX_GEO, barrelMat); mag.scale.set(0.12, 0.35, 0.22); mag.position.set(0, -0.22, -0.1); mag.rotation.x = -0.2;
         const stock = new THREE.Mesh(SHARED_BOX_GEO, darkMat); stock.scale.set(0.16, 0.22, 0.4); stock.position.set(0, -0.05, 0.45);
-        // MIRA CIAN REDUCIDA Y BAJADA (YA NO ESTORBA EL CENTRO)
+        // MIRA DISCRETA (NO OBSTRUYE)
         const sight = new THREE.Mesh(SHARED_BOX_GEO, cyanMat); sight.scale.set(0.02, 0.03, 0.02); sight.position.set(0, 0.14, -0.6);
         gunGroup.add(body, barrel, mag, stock, sight);
       } 
@@ -428,10 +428,10 @@
     }
 
     const WEAPONS = {
-      rifle: { id: 'rifle', name: 'RIFLE AR', damage: 25, fireRate: 180, maxAmmo: 30, spread: 0.005, spreadInc: 0.015, kickZ: 0.04, kickRx: 0.03, pellets: 1, soundPitch: 300, adsFov: 45, adsPos: new THREE.Vector3(0, -0.22, -0.45) },
-      smg: { id: 'smg', name: 'SUBFUSIL', damage: 14, fireRate: 90, maxAmmo: 40, spread: 0.012, spreadInc: 0.018, kickZ: 0.02, kickRx: 0.02, pellets: 1, soundPitch: 450, adsFov: 50, adsPos: new THREE.Vector3(0, -0.20, -0.4) },
-      shotgun: { id: 'shotgun', name: 'ESCOPETA', damage: 16, fireRate: 850, maxAmmo: 8, spread: 0.045, spreadInc: 0.04, kickZ: 0.08, kickRx: 0.07, pellets: 7, soundPitch: 180, adsFov: 55, adsPos: new THREE.Vector3(0, -0.23, -0.45) },
-      sniper: { id: 'sniper', name: 'SNIPER', damage: 100, fireRate: 1200, maxAmmo: 5, spread: 0.001, spreadInc: 0.06, kickZ: 0.1, kickRx: 0.09, pellets: 1, soundPitch: 120, adsFov: 18, adsPos: new THREE.Vector3(0, -0.21, -0.4) }
+      rifle: { id: 'rifle', name: 'RIFLE AR', damage: 25, fireRate: 180, maxAmmo: 30, spread: 0.005, spreadInc: 0.012, kickZ: 0.025, kickRx: 0.018, pellets: 1, soundPitch: 300, adsFov: 45, adsPos: new THREE.Vector3(0, -0.22, -0.45) },
+      smg: { id: 'smg', name: 'SUBFUSIL', damage: 14, fireRate: 90, maxAmmo: 40, spread: 0.012, spreadInc: 0.015, kickZ: 0.015, kickRx: 0.012, pellets: 1, soundPitch: 450, adsFov: 50, adsPos: new THREE.Vector3(0, -0.20, -0.4) },
+      shotgun: { id: 'shotgun', name: 'ESCOPETA', damage: 16, fireRate: 850, maxAmmo: 8, spread: 0.045, spreadInc: 0.03, kickZ: 0.06, kickRx: 0.05, pellets: 7, soundPitch: 180, adsFov: 55, adsPos: new THREE.Vector3(0, -0.23, -0.45) },
+      sniper: { id: 'sniper', name: 'SNIPER', damage: 100, fireRate: 1200, maxAmmo: 5, spread: 0.001, spreadInc: 0.05, kickZ: 0.08, kickRx: 0.07, pellets: 1, soundPitch: 120, adsFov: 18, adsPos: new THREE.Vector3(0, -0.21, -0.4) }
     };
 
     const weaponOrder = ['rifle', 'smg', 'shotgun', 'sniper'];
@@ -544,8 +544,11 @@
       };
     })();
 
-    const TEMP_VEC1 = new THREE.Vector3();
-    const TEMP_VEC2 = new THREE.Vector3();
+    // VECTORES EXCLUSIVOS PARA JUGADOR Y ENEMIGOS (EVITA SOBREESCRITURA DE MEMORIA)
+    const PLAYER_GUN_POS = new THREE.Vector3();
+    const PLAYER_HIT_POS = new THREE.Vector3();
+    const ENEMY_GUN_POS = new THREE.Vector3();
+    const ENEMY_HIT_POS = new THREE.Vector3();
     const TEMP_DIR = new THREE.Vector3();
     const TEMP_RAY = new THREE.Raycaster();
 
@@ -1011,8 +1014,8 @@
 
     function attachWeaponToEnemy(enemyMob) {
       const enemyGun = buildGunMesh('rifle');
-      enemyGun.scale.set(300, 300, 300);
-      enemyGun.position.set(200, 250, 150);
+      enemyGun.scale.set(1, 1, 1);
+      enemyGun.position.set(0.4, 0.8, -0.2);
       enemyMob.add(enemyGun);
       enemyMob.userData.gun = enemyGun;
     }
@@ -1026,9 +1029,22 @@
           const baseModel = gltf.scene;
           const animations = gltf.animations;
 
+          // AUTO-ESCALADO DINÁMICO A TAMAÑO HUMANO (1.8m DE ALTO)
+          const box = new THREE.Box3().setFromObject(baseModel);
+          const size = box.getSize(new THREE.Vector3());
+          const targetHeight = 1.8;
+          const scaleFactor = (size.y > 0) ? (targetHeight / size.y) : 1.0;
+
+          baseModel.traverse((child) => {
+            if (child.isMesh) {
+              child.material.side = THREE.DoubleSide;
+              child.frustumCulled = false;
+            }
+          });
+
           for (let i = 0; i < 8; i++) {
             const mob = (typeof THREE.SkeletonUtils !== 'undefined') ? THREE.SkeletonUtils.clone(baseModel) : baseModel.clone(true);
-            mob.scale.set(0.0015, 0.0015, 0.0015);
+            mob.scale.set(scaleFactor, scaleFactor, scaleFactor);
 
             const spawnPos = getFarSpawnPosition();
             mob.position.copy(spawnPos);
@@ -1089,6 +1105,7 @@
       bulletTracers.push({ mesh: line, spawnTime: performance.now(), duration: 80 });
     }
 
+    // DAÑO LIMPIO AL JUGADOR (SIN SACUDIDAS DE CÁMARA O ARMA)
     function damagePlayer(amount) {
       if (player.shield > 0) {
         if (player.shield >= amount) {
@@ -1220,6 +1237,7 @@
       ctx.stroke();
     }
 
+    // IA ENEMIGA CON VECTORES PROPIOS AISLADOS (NO CONTAMINA EL MOVIMIENTO DEL JUGADOR)
     function updateEnemiesAI(delta, now) {
       targets.forEach((mob) => {
         if (!mob.visible || !mob.userData || mob.userData.health <= 0) return;
@@ -1264,12 +1282,12 @@
           const distToTarget = mob.position.distanceTo(targetPos);
 
           if (distToTarget > 4.0 && distToTarget < 50) {
-            TEMP_DIR.subVectors(targetPos, mob.position);
-            TEMP_DIR.y = 0;
-            TEMP_DIR.normalize();
+            const dirX = targetPos.x - mob.position.x;
+            const dirZ = targetPos.z - mob.position.z;
+            const len = Math.hypot(dirX, dirZ) || 1;
 
-            const nextX = Math.max(-MAX_MAP_RADIUS, Math.min(MAX_MAP_RADIUS, mob.position.x + TEMP_DIR.x * 3.2 * delta));
-            const nextZ = Math.max(-MAX_MAP_RADIUS, Math.min(MAX_MAP_RADIUS, mob.position.z + TEMP_DIR.z * 3.2 * delta));
+            const nextX = Math.max(-MAX_MAP_RADIUS, Math.min(MAX_MAP_RADIUS, mob.position.x + (dirX / len) * 3.2 * delta));
+            const nextZ = Math.max(-MAX_MAP_RADIUS, Math.min(MAX_MAP_RADIUS, mob.position.z + (dirZ / len) * 3.2 * delta));
 
             mob.position.x = nextX;
             mob.position.z = nextZ;
@@ -1281,12 +1299,12 @@
             mob.userData.lastAttack = now;
 
             if (mob.userData.gun) {
-              mob.userData.gun.getWorldPosition(TEMP_VEC1);
+              mob.userData.gun.getWorldPosition(ENEMY_GUN_POS);
             } else {
-              TEMP_VEC1.copy(mob.position).addScalar(1.5);
+              ENEMY_GUN_POS.copy(mob.position).addScalar(1.5);
             }
 
-            TEMP_VEC2.copy(targetPos).add(TEMP_DIR.set(
+            ENEMY_HIT_POS.copy(targetPos).add(new THREE.Vector3(
               (Math.random() - 0.5) * 1.5,
               (Math.random() - 0.5) * 1.5,
               (Math.random() - 0.5) * 1.5
@@ -1296,12 +1314,12 @@
 
             if (isAttackingPlayer) {
               damagePlayer(6);
-              spawnBulletTracer(TEMP_VEC1, TEMP_VEC2, true);
+              spawnBulletTracer(ENEMY_GUN_POS, ENEMY_HIT_POS, true);
             } else {
               const otherBot = mob.userData.targetBot;
               if (otherBot && otherBot.userData) {
                 otherBot.userData.health -= 15;
-                spawnBulletTracer(TEMP_VEC1, TEMP_VEC2, true);
+                spawnBulletTracer(ENEMY_GUN_POS, ENEMY_HIT_POS, true);
 
                 if (otherBot.userData.health <= 0) {
                   handleEnemyDeath(otherBot, false);
@@ -1345,12 +1363,12 @@
       playShootSound(curWep.soundPitch);
       updateHUD();
 
-      // DISPARO CON PATRÓN DE RETROCESO DAMPENADO (YA NO SE MUEVE DE FORMA DESCONTROLADA)
+      // RETROCESO DAMPENADO SUAVE EN EL ARMA DEL JUGADOR
       currentSpread += curWep.spreadInc;
-      weaponMesh.position.z += curWep.kickZ || 0.03;
-      weaponMesh.rotation.x += curWep.kickRx || 0.025;
+      weaponMesh.position.z += curWep.kickZ;
+      weaponMesh.rotation.x += curWep.kickRx;
 
-      weaponMesh.getWorldPosition(TEMP_VEC1);
+      weaponMesh.getWorldPosition(PLAYER_GUN_POS);
 
       const activeTargets = targets.filter(t => t.visible);
       const activeChests = lootChests.filter(c => !c.userData.looted);
@@ -1371,7 +1389,7 @@
             hitObj = hitObj.parent;
           }
 
-          TEMP_VEC2.copy(intersects[0].point);
+          PLAYER_HIT_POS.copy(intersects[0].point);
 
           if (hitObj.userData && hitObj.userData.isChest && !hitObj.userData.looted) {
             hitObj.userData.looted = true;
@@ -1389,10 +1407,10 @@
             }
           }
         } else {
-          TEMP_VEC2.copy(TEMP_RAY.ray.at(60, TEMP_VEC2));
+          PLAYER_HIT_POS.copy(TEMP_RAY.ray.at(60, PLAYER_HIT_POS));
         }
 
-        spawnBulletTracer(TEMP_VEC1, TEMP_VEC2, false);
+        spawnBulletTracer(PLAYER_GUN_POS, PLAYER_HIT_POS, false);
       }
     }
 
@@ -1517,7 +1535,7 @@
 
         updateChunks();
 
-        // ESTABILIZACIÓN DE SUAVIZADO DEL ARMA (RETORNO FLUIDO)
+        // ESTABILIZACIÓN SUAVE DE VUELTA A LA POSICIÓN BASE DEL ARMA
         if (weaponMesh) {
           weaponMesh.position.lerp(targetWeaponPos, delta * 12);
           weaponMesh.rotation.x = THREE.MathUtils.lerp(weaponMesh.rotation.x, defaultWeaponRot.x, delta * 12);
