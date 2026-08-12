@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Voxel Shooter 3D - Reference Error Fixed</title>
+  <title>Voxel Shooter 3D - Fixed Walk Animation & Grounding</title>
   
   <!-- Fuentes Gamer -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -394,7 +394,6 @@
         const barrel = new THREE.Mesh(SHARED_BOX_GEO, barrelMat); barrel.scale.set(0.1, 0.1, 0.65); barrel.position.set(0, 0.04, -0.55);
         const mag = new THREE.Mesh(SHARED_BOX_GEO, barrelMat); mag.scale.set(0.12, 0.35, 0.22); mag.position.set(0, -0.22, -0.1); mag.rotation.x = -0.2;
         const stock = new THREE.Mesh(SHARED_BOX_GEO, darkMat); stock.scale.set(0.16, 0.22, 0.4); stock.position.set(0, -0.05, 0.45);
-        // MIRA DISCRETA Y BAJA
         const sight = new THREE.Mesh(SHARED_BOX_GEO, cyanMat); sight.scale.set(0.02, 0.03, 0.02); sight.position.set(0, 0.14, -0.6);
         gunGroup.add(body, barrel, mag, stock, sight);
       } 
@@ -544,7 +543,6 @@
       };
     })();
 
-    // VECTORES GLOBALES TOTALMENTE DECLARADOS (EVITA ReferenceError)
     const PLAYER_GUN_POS = new THREE.Vector3();
     const PLAYER_HIT_POS = new THREE.Vector3();
     const ENEMY_GUN_POS = new THREE.Vector3();
@@ -625,7 +623,7 @@
       rx = Math.max(-MAX_MAP_RADIUS + 5, Math.min(MAX_MAP_RADIUS - 5, rx));
       rz = Math.max(-MAX_MAP_RADIUS + 5, Math.min(MAX_MAP_RADIUS - 5, rz));
 
-      const ry = getTerrainHeight(rx, rz) + 1.6;
+      const ry = getTerrainHeight(rx, rz);
       return new THREE.Vector3(rx, ry, rz);
     }
 
@@ -1031,10 +1029,16 @@
           const baseModel = gltf.scene;
           const animations = gltf.animations;
 
+          // CORRECCIÓN PIES AL SUELO Y ROTACIÓN 180° (MIRANDO AL FRENTE)
           const box = new THREE.Box3().setFromObject(baseModel);
           const size = box.getSize(new THREE.Vector3());
           const targetHeight = 1.8;
           const scaleFactor = (size.y > 0) ? (targetHeight / size.y) : 1.0;
+
+          // Alineación exacta de la planta de los pies a Y = 0
+          baseModel.position.y = -box.min.y * scaleFactor;
+          // Rotación 180° para que el frente del modelo coincida con la mirada
+          baseModel.rotation.y = Math.PI;
 
           baseModel.traverse((child) => {
             if (child.isMesh) {
@@ -1044,26 +1048,31 @@
           });
 
           for (let i = 0; i < 8; i++) {
-            const mob = (typeof THREE.SkeletonUtils !== 'undefined') ? THREE.SkeletonUtils.clone(baseModel) : baseModel.clone(true);
-            mob.scale.set(scaleFactor, scaleFactor, scaleFactor);
+            const mobContainer = new THREE.Group();
+            const mobModel = (typeof THREE.SkeletonUtils !== 'undefined') ? THREE.SkeletonUtils.clone(baseModel) : baseModel.clone(true);
+            mobModel.scale.set(scaleFactor, scaleFactor, scaleFactor);
+            mobModel.position.y = -box.min.y * scaleFactor;
+            mobModel.rotation.y = Math.PI;
+
+            mobContainer.add(mobModel);
 
             const spawnPos = getFarSpawnPosition();
-            mob.position.copy(spawnPos);
-            mob.userData = { health: 50, lastAttack: 0, targetBot: null };
+            mobContainer.position.copy(spawnPos);
+            mobContainer.userData = { health: 50, lastAttack: 0, targetBot: null, innerModel: mobModel };
 
-            attachWeaponToEnemy(mob);
+            attachWeaponToEnemy(mobContainer);
 
             if (animations && animations.length > 0) {
               try {
-                const mixer = new THREE.AnimationMixer(mob);
+                const mixer = new THREE.AnimationMixer(mobModel);
                 const action = mixer.clipAction(animations[0]);
                 action.play();
                 mixers.push(mixer);
               } catch (e) {}
             }
 
-            scene.add(mob);
-            targets.push(mob);
+            scene.add(mobContainer);
+            targets.push(mobContainer);
           }
           updateHUD();
         },
@@ -1237,6 +1246,7 @@
       ctx.stroke();
     }
 
+    // IA ENEMIGA CON CAMINATA PROCEDURAL (PASO Y BALANCEO DE CUERPO)
     function updateEnemiesAI(delta, now) {
       targets.forEach((mob) => {
         if (!mob.visible || !mob.userData || mob.userData.health <= 0) return;
@@ -1279,8 +1289,9 @@
 
         if (targetPos) {
           const distToTarget = mob.position.distanceTo(targetPos);
+          const isMoving = distToTarget > 4.0 && distToTarget < 50;
 
-          if (distToTarget > 4.0 && distToTarget < 50) {
+          if (isMoving) {
             const dirX = targetPos.x - mob.position.x;
             const dirZ = targetPos.z - mob.position.z;
             const len = Math.hypot(dirX, dirZ) || 1;
@@ -1290,7 +1301,19 @@
 
             mob.position.x = nextX;
             mob.position.z = nextZ;
-            mob.position.y = getTerrainHeight(mob.position.x, mob.position.z) + 1.6;
+
+            // ANIMACIÓN PROCEDURAL DE PASOS (BOBBING VÓXEL)
+            const walkTime = now * 0.012;
+            const bobY = Math.abs(Math.sin(walkTime)) * 0.18;
+            const tiltZ = Math.sin(walkTime) * 0.08;
+
+            mob.position.y = getTerrainHeight(mob.position.x, mob.position.z) + bobY;
+            if (mob.userData.innerModel) mob.userData.innerModel.rotation.z = tiltZ;
+
+            mob.lookAt(targetPos.x, mob.position.y, targetPos.z);
+          } else {
+            mob.position.y = getTerrainHeight(mob.position.x, mob.position.z);
+            if (mob.userData.innerModel) mob.userData.innerModel.rotation.z = 0;
             mob.lookAt(targetPos.x, mob.position.y, targetPos.z);
           }
 
